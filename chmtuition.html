@@ -160,8 +160,8 @@
             <img id="splash-logo" src="https://placehold.co/128x128/3b82f6/FFFFFF?text=NS" alt="School Logo" class="h-40 w-40 mx-auto mb-8 rounded-full object-cover shadow-[0_10px_30px_rgba(0,0,0,0.15)] border-4 border-white">
             
             <!-- Aesthetic Splash Title -->
-            <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-[0.15em] uppercase drop-shadow-[0_4px_6px_rgba(0,0,0,0.2)]" 
-                style="font-family: 'Cinzel', serif; background: linear-gradient(to right, #ffffff 0%, #93c5fd 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: 1.5px rgba(255,255,255,0.7);">
+            <h1 class="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-[0.15em] uppercase drop-shadow-lg text-blue-900" 
+                style="font-family: 'Cinzel', serif; -webkit-text-stroke: 0.5px rgba(255,255,255,0.8);">
                 Neerada School
             </h1>
             
@@ -938,6 +938,8 @@
                 }
             }, (error) => {
                 console.error("Firestore Error:", error);
+                const loader = document.getElementById('firebase-loader');
+                if (loader) loader.classList.add('hidden');
             });
         }
 
@@ -3087,6 +3089,15 @@
             function init() {
                 utils.loadState();
                 DOMElements.currentYearSpan.textContent = new Date().getFullYear();
+
+                // Fallback to prevent slow loading screens: forcefully hide loader after 1.5 seconds
+                // Data will continue to sync in the background
+                setTimeout(() => {
+                    const loader = document.getElementById('firebase-loader');
+                    if (loader && !loader.classList.contains('hidden')) {
+                        loader.classList.add('hidden');
+                    }
+                }, 1500);
 
                 document.querySelector('aside').addEventListener('click', handlers.navigate);
                 document.getElementById('settings-btn').addEventListener('click', handlers.openSettingsModal);
