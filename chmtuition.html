@@ -130,18 +130,6 @@
             border-left: 2px solid #334155;
             box-shadow: 8px 8px 16px #0f172a, -8px -8px 16px #334155;
         }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.65);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-        }
-        .theme-dark .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
 
         #splash-screen { transition: opacity 0.6s ease-out; }
         #login-screen { transition: opacity 0.6s ease-in; }
@@ -150,6 +138,12 @@
         #lock-screen-overlay {
             background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
             backdrop-filter: blur(20px);
+        }
+        
+        /* Global loader overlay */
+        #firebase-loader {
+            background-color: var(--theme-bg-primary);
+            z-index: 55;
         }
     </style>
 </head>
@@ -222,6 +216,41 @@
         </div>
     </div>
     
+    <!-- System Lock/Unlock Custom Modals -->
+    <div id="system-lock-modal" class="fixed inset-0 z-[99999] flex items-center justify-center hidden">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm"></div>
+        <div class="relative bg-white rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl text-center">
+            <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2">Lock System</h3>
+            <p class="text-sm text-slate-500 mb-6">Enter the Admin Code to secure the system.</p>
+            <input type="password" id="lock-code-input" class="w-full p-3 text-center tracking-[0.5em] font-mono mb-2 border-2 rounded-xl border-slate-300 focus:border-blue-500 outline-none">
+            <p id="lock-error" class="text-red-500 text-xs font-bold mb-4 h-4 opacity-0 transition-opacity">Incorrect Code</p>
+            <div class="flex gap-3 justify-center">
+                <button id="cancel-lock-btn" class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors">Cancel</button>
+                <button id="confirm-lock-btn" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md transition-colors">Lock</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="system-unlock-modal" class="fixed inset-0 z-[99999] flex items-center justify-center hidden">
+        <div class="fixed inset-0 bg-black/60 backdrop-blur-md"></div>
+        <div class="relative bg-white rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl text-center">
+            <div class="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><path d="M12 15v2"/></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2">Unlock System</h3>
+            <p class="text-sm text-slate-500 mb-6">Enter the Admin Code to resume.</p>
+            <input type="password" id="unlock-code-input" class="w-full p-3 text-center tracking-[0.5em] font-mono mb-2 border-2 rounded-xl border-slate-300 focus:border-green-500 outline-none">
+            <p id="unlock-error" class="text-red-500 text-xs font-bold mb-4 h-4 opacity-0 transition-opacity">Incorrect Code</p>
+            <div class="flex gap-3 justify-center">
+                <button id="cancel-unlock-btn" class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors">Cancel</button>
+                <button id="confirm-unlock-btn" class="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-md transition-colors">Unlock</button>
+            </div>
+        </div>
+    </div>
+
     <!-- System Lock Overlay -->
     <div id="lock-screen-overlay" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center hidden">
         <div class="relative text-center flex flex-col items-center">
@@ -232,7 +261,16 @@
     </div>
 
     <!-- Main Application Container -->
-    <div id="app-container" class="flex h-screen bg-primary hidden">
+    <div id="app-container" class="flex h-screen bg-primary hidden relative">
+        <!-- Global Firebase Loading Overlay -->
+        <div id="firebase-loader" class="absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-500">
+            <svg class="animate-spin h-10 w-10 text-primary mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-secondary font-medium tracking-wide animate-pulse">Syncing with Cloud Database...</p>
+        </div>
+
         <!-- Sidebar -->
         <aside id="sidebar" class="flex flex-col flex-shrink-0 w-64 transition-all duration-300 border-r bg-secondary border-color shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
             <div class="flex items-center justify-center h-20 px-4 border-b border-color">
@@ -290,7 +328,7 @@
             <!-- Page Content -->
             <div class="flex-1 p-8 overflow-y-auto custom-scroll">
                 <!-- Dashboard Page -->
-                <div id="dashboard-page" class="page">
+                <div id="dashboard-page" class="page hidden">
                     <!-- Dashboard Filters -->
                     <div class="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2">
                         <div class="p-5 rounded-xl shadow-sm border border-color bg-secondary">
@@ -517,7 +555,7 @@
                         </div>
                     </div>
                     
-                    <!-- Admin Tab Content (Consolidated General & Data) -->
+                    <!-- Admin Tab Content -->
                     <div id="admin-tab-content" class="hidden settings-tab-content">
                         <div id="admin-login-view" class="max-w-sm mx-auto p-8 border rounded-2xl border-color bg-tertiary/30 shadow-sm mt-10">
                             <div class="text-center mb-6">
@@ -578,10 +616,9 @@
                                 </div>
                             </div>
                             
-                            <!-- Data Management (Firebase + Backup) -->
+                            <!-- Data Management (Backup) -->
                             <div>
                                 <h5 class="font-bold text-lg mb-4 text-primary border-b border-color pb-2" data-translate-key="data_management">Data Management</h5>
-
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="p-5 border rounded-xl border-color bg-tertiary/50">
                                         <h6 class="font-bold text-sm mb-1" data-translate-key="export_data">Local Backup (Export)</h6>
@@ -640,7 +677,7 @@
         </form>
     </div>
 
-    <!-- Student Payment Details Modal (RESTRUCTURED NO GLOBAL DISCOUNTS) -->
+    <!-- Student Payment Details Modal -->
     <div id="payment-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="fixed inset-0 modal-backdrop" id="close-payment-backdrop"></div>
         <div class="relative flex flex-col w-full max-w-6xl m-4 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] bg-secondary max-h-[90vh] border border-color overflow-hidden">
@@ -862,14 +899,20 @@
         }
 
         function setupFirebaseListener() {
-            if (!db || !fbUser) return;
-            // Mandatory Rule 1: Exact Paths
-            const docRef = doc(db, 'artifacts', fbAppId, 'users', fbUser.uid, 'appData', 'neeradaState');
+            if (!db) return;
+            // Public path to ensure all devices (anonymous sessions) share the same instance state
+            const docRef = doc(db, 'artifacts', fbAppId, 'public', 'data', 'appState', 'main');
             
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists() && window._allowFirebaseUpdates) {
-                    const cloudState = docSnap.data();
-                    window._updateStateFromCloud(cloudState);
+                if (docSnap.exists()) {
+                    if (window._allowFirebaseUpdates && typeof window._updateStateFromCloud === 'function') {
+                        window._updateStateFromCloud(docSnap.data());
+                    }
+                } else {
+                    // Init default state in Firebase if it doesn't exist
+                    if (window._allowFirebaseUpdates && typeof window._initializeDefaultState === 'function') {
+                        window._initializeDefaultState();
+                    }
                 }
             }, (error) => {
                 console.error("Firestore Error:", error);
@@ -877,9 +920,9 @@
         }
 
         window._syncToFirebase = async function(stateData) {
-            if (!isFirebaseReady || !fbUser) return;
+            if (!isFirebaseReady) return;
             try {
-                const docRef = doc(db, 'artifacts', fbAppId, 'users', fbUser.uid, 'appData', 'neeradaState');
+                const docRef = doc(db, 'artifacts', fbAppId, 'public', 'data', 'appState', 'main');
                 await setDoc(docRef, stateData);
             } catch(e) {
                 console.error("Failed to sync to Firebase:", e);
@@ -908,13 +951,14 @@
             const loginLogo = document.getElementById('login-logo');
             const lockOverlay = document.getElementById('lock-screen-overlay');
             const secretUnlockIcon = document.getElementById('secret-unlock-icon');
+            const loginSecretLock = document.getElementById('login-secret-lock');
 
             // Apply persistent System Lock
             if (localStorage.getItem('isSystemLocked') === 'true') {
                 lockOverlay.classList.remove('hidden');
             }
 
-            // Lock System Feature UI
+            // System Unlock Feature UI
             secretUnlockIcon.addEventListener('click', () => {
                 const code = prompt("Enter Admin Code to Unlock System:");
                 if (code === "0000") {
@@ -925,6 +969,19 @@
                 }
             });
 
+            // System Lock Trigger (From Login Screen)
+            if(loginSecretLock) {
+                loginSecretLock.addEventListener('click', () => {
+                    const code = prompt("Enter Admin Code to Lock System:");
+                    if (code === "0000") {
+                        localStorage.setItem('isSystemLocked', 'true');
+                        lockOverlay.classList.remove('hidden');
+                    } else if (code !== null) {
+                        alert("Incorrect Code.");
+                    }
+                });
+            }
+
             // Persistence check
             if (localStorage.getItem('isLoggedIn') === 'true') {
                 splashScreen.classList.add('hidden');
@@ -933,15 +990,6 @@
                 appContainer.style.display = 'flex';
                 initMainApp();
                 return;
-            }
-            
-            const savedStateRaw = localStorage.getItem('neeradaTuitionTracker');
-            if (savedStateRaw) {
-                const savedState = JSON.parse(savedStateRaw);
-                if (savedState.settings && savedState.settings.logo) {
-                    splashLogo.src = savedState.settings.logo;
-                    loginLogo.src = savedState.settings.logo;
-                }
             }
 
             splashYear.textContent = new Date().getFullYear();
@@ -1268,43 +1316,7 @@
             };
 
             // --- APPLICATION STATE ---
-            let state = {
-                students: [],
-                settings: {
-                    schoolYears: ['2024-2025', '2025-2026', '2026-2027'],
-                    campuses: ['Chommany Campus'], 
-                    departments: ['Kindergarten', 'Primary', 'Lower Secondary', 'Higher Secondary'],
-                    classes: {
-                        'Kindergarten': ['K1-A', 'K1-B', 'K2-A', 'K2-B', 'K3-A'],
-                        'Primary': ['P1-A', 'P2-A', 'P3-A', 'P4-A', 'P5-A'],
-                        'Lower Secondary': ['M1-A', 'M2-A', 'M3-A'],
-                        'Higher Secondary': ['M4-A', 'M5-A', 'M6-A', 'M7-A']
-                    },
-                    tuition: {
-                       '2024-2025': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 },
-                       '2025-2026': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 },
-                       '2026-2027': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 }
-                    },
-                    summerFees: {},
-                    theme: 'light',
-                    font: 'normal',
-                    logo: 'https://placehold.co/128x128/3b82f6/FFFFFF?text=NS'
-                },
-                ui: {
-                    currentPage: 'dashboard',
-                    studentSort: { key: 'name', order: 'asc' },
-                    selectedStudents: new Set(),
-                    language: 'en',
-                    rosterFilters: {
-                        schoolYear: '2025-2026',
-                        campus: 'all',
-                        department: 'all',
-                        className: 'all',
-                        statusMonth: 'Sep',
-                        paymentStatus: 'all',
-                    },
-                }
-            };
+            let state = {};
 
             // Hook for Cloud Sync (Overwritten by Firebase Module)
             window._updateStateFromCloud = function(cloudState) {
@@ -1312,9 +1324,88 @@
                 window._allowFirebaseUpdates = false; // Prevent bounce back
                 state = { ...state, ...cloudState };
                 state.ui.selectedStudents = new Set(Array.from(state.ui.selectedStudents || []));
+                
+                // Ensure settings structure
+                if (!state.settings.summerFees || Array.isArray(state.settings.summerFees)) {
+                    state.settings.summerFees = {};
+                    state.settings.schoolYears.forEach(sy => {
+                        state.settings.summerFees[sy] = {};
+                        state.settings.departments.forEach(dept => {
+                            state.settings.summerFees[sy][dept] = [
+                                { id: utils.generateId(), desc: 'Summer Tuition', amount: 1500000 }
+                            ];
+                        });
+                    });
+                }
+                
+                // Set app logos
+                if (state.settings.logo) {
+                    const sl = document.getElementById('splash-logo');
+                    const ll = document.getElementById('login-logo');
+                    if (sl) sl.src = state.settings.logo;
+                    if (ll) ll.src = state.settings.logo;
+                    utils.updateFavicons(state.settings.logo);
+                }
+
                 render.all();
                 translateUI();
+                
+                // Hide global loader
+                document.getElementById('firebase-loader').classList.add('hidden');
+                
                 setTimeout(() => window._allowFirebaseUpdates = true, 500);
+            };
+            
+            window._initializeDefaultState = function() {
+                const defaultState = {
+                    students: [],
+                    settings: {
+                        schoolYears: ['2024-2025', '2025-2026', '2026-2027'],
+                        campuses: ['Chommany Campus'], 
+                        departments: ['Kindergarten', 'Primary', 'Lower Secondary', 'Higher Secondary'],
+                        classes: {
+                            'Kindergarten': ['K1-A', 'K1-B', 'K2-A', 'K2-B', 'K3-A'],
+                            'Primary': ['P1-A', 'P2-A', 'P3-A', 'P4-A', 'P5-A'],
+                            'Lower Secondary': ['M1-A', 'M2-A', 'M3-A'],
+                            'Higher Secondary': ['M4-A', 'M5-A', 'M6-A', 'M7-A']
+                        },
+                        tuition: {
+                           '2024-2025': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 },
+                           '2025-2026': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 },
+                           '2026-2027': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 }
+                        },
+                        summerFees: {},
+                        theme: 'light',
+                        font: 'normal',
+                        logo: 'https://placehold.co/128x128/3b82f6/FFFFFF?text=NS'
+                    },
+                    ui: {
+                        currentPage: 'dashboard',
+                        studentSort: { key: 'name', order: 'asc' },
+                        selectedStudents: [],
+                        language: 'en',
+                        rosterFilters: {
+                            schoolYear: '2025-2026',
+                            campus: 'all',
+                            department: 'all',
+                            className: 'all',
+                            statusMonth: 'Sep',
+                            paymentStatus: 'all',
+                        },
+                    }
+                };
+
+                defaultState.settings.schoolYears.forEach(sy => {
+                    defaultState.settings.summerFees[sy] = {};
+                    defaultState.settings.departments.forEach(dept => {
+                        defaultState.settings.summerFees[sy][dept] = [
+                            { id: utils.generateId(), desc: 'Summer Tuition', amount: 1500000 }
+                        ];
+                    });
+                });
+
+                if (typeof window._syncToFirebase === 'function') window._syncToFirebase(defaultState);
+                window._updateStateFromCloud(defaultState);
             };
 
             // --- DOM ELEMENTS ---
@@ -1328,52 +1419,14 @@
             // --- UTILITY FUNCTIONS ---
             const utils = {
                 saveState: () => {
-                    localStorage.setItem('neeradaTuitionTracker', JSON.stringify(state));
                     historyManager.saveSnapshot();
                     if (typeof window._syncToFirebase === 'function' && window._allowFirebaseUpdates) {
-                        // Deep clone to remove Sets before pushing to Firestore
                         const stateToSync = JSON.parse(JSON.stringify(state)); 
                         stateToSync.ui.selectedStudents = Array.from(state.ui.selectedStudents);
-                        window._syncToFirebase(stateToSync);
-                    }
-                },
-                loadState: () => {
-                    const savedState = localStorage.getItem('neeradaTuitionTracker');
-                    if (savedState) {
-                        const parsedState = JSON.parse(savedState);
-                        state = {
-                            ...state,
-                            ...parsedState,
-                            settings: { ...state.settings, ...parsedState.settings },
-                            ui: { ...state.ui, ...parsedState.ui },
-                        };
-                        state.ui.selectedStudents = new Set(Array.from(state.ui.selectedStudents || []));
-                        
-                        // Migrate flat array summer fees to department-specific structure
-                        if (!state.settings.summerFees || Array.isArray(state.settings.summerFees)) {
-                            const oldFees = Array.isArray(state.settings.summerFees) ? state.settings.summerFees : [{ id: 'sf_default', desc: 'Summer Tuition', amount: 1500000 }];
-                            state.settings.summerFees = {};
-                            state.settings.schoolYears.forEach(sy => {
-                                state.settings.summerFees[sy] = {};
-                                state.settings.departments.forEach(dept => {
-                                    state.settings.summerFees[sy][dept] = JSON.parse(JSON.stringify(oldFees));
-                                });
-                            });
-                            utils.saveState();
-                        }
-                    } else {
-                        // Init default summerFees
-                        state.settings.summerFees = {};
-                        state.settings.schoolYears.forEach(sy => {
-                            state.settings.summerFees[sy] = {};
-                            state.settings.departments.forEach(dept => {
-                                state.settings.summerFees[sy][dept] = [
-                                    { id: utils.generateId(), desc: 'Summer Tuition', amount: 1500000 }
-                                ];
-                            });
+                        window._allowFirebaseUpdates = false;
+                        window._syncToFirebase(stateToSync).then(() => {
+                             setTimeout(() => window._allowFirebaseUpdates = true, 500);
                         });
-                        state.students = []; 
-                        utils.saveState();
                     }
                 },
                 updateFavicons: (url) => {
@@ -2228,6 +2281,11 @@
                 }
             };
 
+            const generateStudentReportHTML = (student) => {
+                const fin = utils.calculateStudentFinancials(student);
+                return ``; 
+            };
+
             const generateRosterReportHTML = () => {
                 let filteredStudents = data.getFilteredStudents(true);
                 const filters = state.ui.rosterFilters;
@@ -2630,20 +2688,8 @@
                 },
                 handleManageClicks: async (e) => {
                     const target = e.target;
-                    // Summer Fees specific handling
-                    if (target.id === 'add-summer-fee-btn') {
-                        state.settings.summerFees.push({ id: utils.generateId(), desc: '', amount: 0 });
-                        utils.saveState();
-                        render.settings();
-                    } else if (target.classList.contains('remove-summer-setting-btn')) {
-                        const id = target.closest('.summer-setting-row').dataset.id;
-                        state.settings.summerFees = state.settings.summerFees.filter(f => f.id !== id);
-                        utils.saveState();
-                        render.settings();
-                    }
-                    
                     // Generic List handling
-                    else if (target.classList.contains('add-manage-btn')) {
+                    if (target.classList.contains('add-manage-btn')) {
                         const key = target.dataset.key;
                         const dept = target.dataset.dept; 
                         const input = target.previousElementSibling;
@@ -2795,9 +2841,9 @@
                             if (confirmed) {
                                 try {
                                     const importedState = JSON.parse(event.target.result);
-                                    state = importedState;
-                                    utils.saveState();
-                                    location.reload();
+                                    if(typeof window._syncToFirebase === 'function') window._syncToFirebase(importedState);
+                                    utils.showMessage('Data imported! Reloading...', 'success');
+                                    setTimeout(() => location.reload(), 1000);
                                 } catch (error) {
                                     utils.showMessage('error_parsing_file', 'error');
                                 }
@@ -3046,20 +3092,6 @@
                 document.getElementById('manage-page').addEventListener('click', handlers.handleManageClicks);
                 document.getElementById('settings-modal').addEventListener('click', handlers.handleManageClicks);
                 
-                // System Lock Trigger (Now on Login Screen)
-                const loginSecretLock = document.getElementById('login-secret-lock');
-                if(loginSecretLock) {
-                    loginSecretLock.addEventListener('click', () => {
-                        const code = prompt("Enter Admin Code to Lock System:");
-                        if (code === "0000") {
-                            localStorage.setItem('isSystemLocked', 'true');
-                            document.getElementById('lock-screen-overlay').classList.remove('hidden');
-                        } else if (code !== null) {
-                            alert("Incorrect Code.");
-                        }
-                    });
-                }
-
                 document.querySelector('.settings-tab').parentElement.addEventListener('click', handlers.handleSettingsTabs);
                 document.getElementById('theme-select').addEventListener('change', handlers.handleSettingsChanges);
                 document.getElementById('font-select').addEventListener('change', handlers.handleSettingsChanges);
@@ -3110,7 +3142,6 @@
                         if (!state.settings.summerFees[sy][dept]) state.settings.summerFees[sy][dept] = [];
                         
                         state.settings.summerFees[sy][dept].push({ id: utils.generateId(), desc: '', amount: 0 });
-                        utils.saveState();
                         render.settings();
                     } else if (e.target.classList.contains('remove-summer-setting-btn')) {
                         const row = e.target.closest('.summer-setting-row');
@@ -3119,7 +3150,6 @@
                         const sy = document.getElementById('tuition-sy-select').value;
                         
                         state.settings.summerFees[sy][dept] = state.settings.summerFees[sy][dept].filter(f => f.id !== id);
-                        utils.saveState();
                         render.settings();
                     }
                 });
