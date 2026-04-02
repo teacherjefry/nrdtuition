@@ -1033,6 +1033,105 @@
             }
         };
         window.state = state;
+
+        // Hook for Cloud Sync (Overwritten by Firebase Module)
+        window._updateStateFromCloud = function(cloudState) {
+            if (!cloudState) return;
+            window._allowFirebaseUpdates = false; // Prevent bounce back
+            
+            // Safely deeply merge cloud state into window.state to preserve defaults and object references
+            window.state.settings = { ...window.state.settings, ...(cloudState.settings || {}) };
+            window.state.ui = { ...window.state.ui, ...(cloudState.ui || {}) };
+            window.state.students = cloudState.students || window.state.students;
+            
+            window.state.ui.selectedStudents = new Set(Array.from(window.state.ui.selectedStudents || []));
+            
+            // Ensure settings structure
+            if (!window.state.settings.summerFees || Array.isArray(window.state.settings.summerFees)) {
+                window.state.settings.summerFees = {};
+                window.state.settings.schoolYears.forEach(sy => {
+                    window.state.settings.summerFees[sy] = {};
+                    window.state.settings.departments.forEach(dept => {
+                        window.state.settings.summerFees[sy][dept] = [
+                            { id: utils.generateId(), desc: 'Summer Tuition', amount: 1500000 }
+                        ];
+                    });
+                });
+            }
+            
+            // Sync System Lock across devices
+            if(window.state.settings.isSystemLocked) {
+                localStorage.setItem('isSystemLocked', 'true');
+                document.getElementById('lock-screen-overlay').classList.remove('hidden');
+            } else {
+                localStorage.removeItem('isSystemLocked');
+                document.getElementById('lock-screen-overlay').classList.add('hidden');
+            }
+            
+            // Set app logos universally
+            if (window.state.settings.logo) {
+                const sl = document.getElementById('splash-logo');
+                const ll = document.getElementById('login-logo');
+                const sls = document.getElementById('school-logo-sidebar');
+                const ap = document.getElementById('admin-logo-preview');
+                if (sl) sl.src = window.state.settings.logo;
+                if (ll) ll.src = window.state.settings.logo;
+                if (sls) sls.src = window.state.settings.logo;
+                if (ap) ap.src = window.state.settings.logo;
+                utils.updateFavicons(window.state.settings.logo);
+            }
+
+            render.all();
+            translateUI();
+            
+            // Hide global loader
+            document.getElementById('firebase-loader').classList.add('hidden');
+            
+            setTimeout(() => window._allowFirebaseUpdates = true, 500);
+        };
+        
+        window._initializeDefaultState = function() {
+            const defaultState = {
+                students: [],
+                settings: {
+                    schoolYears: ['2024-2025', '2025-2026', '2026-2027'],
+                    campuses: ['Chommany Campus'], 
+                    departments: ['Kindergarten', 'Primary', 'Lower Secondary', 'Higher Secondary'],
+                    classes: {
+                        'Kindergarten': ['K1-A', 'K1-B', 'K2-A', 'K2-B', 'K3-A'],
+                        'Primary': ['P1-A', 'P2-A', 'P3-A', 'P4-A', 'P5-A'],
+                        'Lower Secondary': ['M1-A', 'M2-A', 'M3-A'],
+                        'Higher Secondary': ['M4-A', 'M5-A', 'M6-A', 'M7-A']
+                    },
+                    tuition: {
+                       '2024-2025': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 },
+                       '2025-2026': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 },
+                       '2026-2027': { 'Kindergarten': 1500000, 'Primary': 2000000, 'Lower Secondary': 2500000, 'Higher Secondary': 3000000 }
+                    },
+                    summerFees: {},
+                    theme: 'light',
+                    font: 'normal',
+                    logo: 'https://placehold.co/128x128/3b82f6/FFFFFF?text=NS',
+                    globalLogin: false,
+                    isSystemLocked: false
+                }
+            };
+
+            defaultState.settings.schoolYears.forEach(sy => {
+                defaultState.settings.summerFees[sy] = {};
+                defaultState.settings.departments.forEach(dept => {
+                    defaultState.settings.summerFees[sy][dept] = [
+                        { id: utils.generateId(), desc: 'Summer Tuition', amount: 1500000 }
+                    ];
+                });
+            });
+
+            if (typeof window._syncToFirebase === 'function') window._syncToFirebase(defaultState);
+            window._updateStateFromCloud(defaultState);
+            
+            // Hide loader
+            document.getElementById('firebase-loader').classList.add('hidden');
+        };
         
         // 2. Define Translations
         const translations = {
@@ -1122,8 +1221,10 @@
                     if (window._saveTimeout) clearTimeout(window._saveTimeout);
                     window._saveTimeout = setTimeout(() => {
                         if (window._allowFirebaseUpdates) {
-                            const stateToSync = JSON.parse(JSON.stringify(window.state)); 
-                            stateToSync.ui.selectedStudents = Array.from(window.state.ui.selectedStudents);
+                            const stateToSync = {
+                                students: window.state.students,
+                                settings: window.state.settings
+                            }; 
                             window._allowFirebaseUpdates = false;
                             window._syncToFirebase(stateToSync).then(() => {
                                  setTimeout(() => window._allowFirebaseUpdates = true, 500);
@@ -2702,7 +2803,7 @@
                     if (code === "0000") {
                         localStorage.setItem('isSystemLocked', 'true');
                         lockOverlay.classList.remove('hidden');
-                        window.state.ui.isSystemLocked = true;
+                        window.state.settings.isSystemLocked = true;
                         utils.saveState();
                     } else if (code !== null) alert("Incorrect Code. Access Denied.");
                 });
@@ -2714,7 +2815,7 @@
                     if (code === "0000") {
                         localStorage.removeItem('isSystemLocked');
                         lockOverlay.classList.add('hidden');
-                        window.state.ui.isSystemLocked = false;
+                        window.state.settings.isSystemLocked = false;
                         utils.saveState();
                     } else if (code !== null) alert("Incorrect Code. Access Denied.");
                 });
