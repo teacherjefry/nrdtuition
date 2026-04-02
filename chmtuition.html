@@ -1371,10 +1371,11 @@
                     netTotalDue, netAmountPaid, remainingBalance, summerGross, summerNet, monthDetails
                 };
             },
-            printContent: (titleKey, contentHTML, isReceipt = false) => {
+            printContent: (titleKey, contentHTML, isReceipt = false, forceBranding = false) => {
+                const showBranding = isReceipt || forceBranding;
                 const title = window.translations[window.state.ui.language][titleKey] || titleKey;
                 const schoolName = window.translations[window.state.ui.language].school_name;
-                const logoHtml = isReceipt ? `<img src="${window.state.settings.logo}" style="width: 90px; height: 90px; object-fit: cover; border-radius: 50%; margin: 0 auto 15px auto; display: block;" />` : '';
+                const logoHtml = showBranding ? `<img src="${window.state.settings.logo}" style="width: 90px; height: 90px; object-fit: cover; border-radius: 50%; margin: 0 auto 15px auto; display: block;" />` : '';
                 
                 const printWindow = window.open('', '', 'height=800,width=800');
                 printWindow.document.write(`
@@ -1383,7 +1384,7 @@
                     <head>
                         <title>${title}</title>
                         <style>
-                            body { font-family: 'Inter', 'Segoe UI', sans-serif; padding: ${isReceipt ? '40px' : '20px'}; color: #1e293b; margin: 0; max-width: 800px; margin: 0 auto; }
+                            body { font-family: 'Inter', 'Segoe UI', sans-serif; padding: ${isReceipt ? '40px' : '20px'}; color: #1e293b; margin: 0; max-width: 100%; margin: 0 auto; }
                             h1, h2, h3 { color: #0f172a; font-family: 'Montserrat', sans-serif; }
                             .report-header { text-align: center; margin-bottom: 30px; border-bottom: ${isReceipt ? '2px dashed #cbd5e1' : '3px solid #3b82f6'}; padding-bottom: 20px; }
                             .report-title { font-size: ${isReceipt ? '24px' : '28px'}; font-weight: 800; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
@@ -1416,7 +1417,7 @@
                             <p class="report-date">Generated: ${new Date().toLocaleString()}</p>
                         </div>
                         ${contentHTML}
-                        ${isReceipt ? `<div class="receipt-footer">&copy; ${new Date().getFullYear()} ${schoolName}. All Rights Reserved.</div>` : ''}
+                        ${showBranding ? `<div class="receipt-footer">&copy; ${new Date().getFullYear()} ${schoolName}. All Rights Reserved.</div>` : ''}
                     </body>
                     </html>
                 `);
@@ -1545,6 +1546,14 @@
                 };
 
                 const filterSummary = `
+                    <style>
+                        @media print {
+                            @page { size: A4 landscape; margin: 10mm; }
+                        }
+                        .roster-print-table th { text-align: center !important; }
+                        .roster-print-table td { text-align: center !important; vertical-align: middle; }
+                        .roster-print-table td.name-col { text-align: left !important; }
+                    </style>
                     <div class="content-box">
                         <h3 style="margin-top:0;">${window.translations[window.state.ui.language].roster_filtered_by}:</h3>
                         <p class="info-line">
@@ -1561,38 +1570,45 @@
                     </div>
                 `;
 
-                const tableRows = filteredStudents.map(student => {
+                const tableRows = filteredStudents.map((student, index) => {
                     const selectedMonth = filters.statusMonth;
                     const paymentEntry = student.payments[selectedMonth];
-                    let statusText = window.translations[window.state.ui.language].unpaid;
+                    
+                    let statusEn = window.translations['en'].unpaid;
+                    let statusLo = window.translations['lo'].unpaid;
                     let statusClass = 'status-unpaid';
 
                     if (selectedMonth === 'Jul' && !paymentEntry) {
-                        statusText = window.translations[window.state.ui.language].na;
+                        statusEn = window.translations['en'].na;
+                        statusLo = window.translations['lo'].na;
                         statusClass = 'status-not-enrolled';
                     } else if (paymentEntry && paymentEntry.status === 'paid') {
-                        statusText = window.translations[window.state.ui.language].paid;
+                        statusEn = window.translations['en'].paid;
+                        statusLo = window.translations['lo'].paid;
                         statusClass = 'status-paid';
-                    } else {
-                        statusText = window.translations[window.state.ui.language].unpaid;
-                        statusClass = 'status-unpaid';
                     }
+
+                    const statusDisplay = `${statusEn} <span style="font-weight: normal; font-size: 0.9em; color: #64748b;">(${statusLo})</span>`;
 
                     return `
                         <tr>
-                            <td><b>${student.name}</b></td>
+                            <td>${index + 1}</td>
+                            <td class="name-col"><b>${student.name}</b></td>
                             <td>${student.schoolYear}</td>
                             <td>${student.department}</td>
                             <td>${student.className}</td>
-                            <td class="${statusClass}">${statusText}</td>
+                            <td class="${statusClass}">${statusDisplay}</td>
                         </tr>
                     `;
                 }).join('');
 
+                const noLabel = window.state.ui.language === 'lo' ? 'ລ/ດ' : 'No.';
+
                 const tableHTML = `
-                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                    <table class="roster-print-table" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
                         <thead>
                             <tr>
+                                <th style="width: 40px;">${noLabel}</th>
                                 <th>${window.translations[window.state.ui.language].student_name}</th>
                                 <th>${window.translations[window.state.ui.language].school_year}</th>
                                 <th>${window.translations[window.state.ui.language].department}</th>
@@ -2731,7 +2747,7 @@
                     utils.printReceipt(studentId);
                 } else if (window.state.ui.currentPage === 'students') {
                     const content = utils.generateRosterReportHTML();
-                    utils.printContent('print_report_roster', content);
+                    utils.printContent('print_report_roster', content, false, true);
                 } else {
                     utils.showMessage('Printing is currently only supported for the Roster and Student Details pages.');
                 }
