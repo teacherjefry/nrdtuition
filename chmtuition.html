@@ -1021,14 +1021,14 @@
                 theme: 'light',
                 font: 'normal',
                 logo: 'https://placehold.co/128x128/3b82f6/FFFFFF?text=NS',
-                globalLogin: false // <--- New persistent login flag
+                globalLogin: false,
+                isSystemLocked: false
             },
             ui: {
                 currentPage: 'dashboard',
                 studentSort: { key: 'name', order: 'asc' },
                 selectedStudents: new Set(),
                 language: 'en',
-                isSystemLocked: false,
                 rosterFilters: { schoolYear: '2025-2026', campus: 'all', department: 'all', className: 'all', statusMonth: 'Sep', paymentStatus: 'all' }
             }
         };
@@ -1041,10 +1041,10 @@
             
             // Safely deeply merge cloud state into window.state to preserve defaults and object references
             window.state.settings = { ...window.state.settings, ...(cloudState.settings || {}) };
-            window.state.ui = { ...window.state.ui, ...(cloudState.ui || {}) };
             window.state.students = cloudState.students || window.state.students;
             
-            window.state.ui.selectedStudents = new Set(Array.from(window.state.ui.selectedStudents || []));
+            // NOTE: Intentionally EXCLUDING `cloudState.ui` merge so that every device acts independently 
+            // for viewing pages, searching, filtering, etc.
             
             // Ensure settings structure
             if (!window.state.settings.summerFees || Array.isArray(window.state.settings.summerFees)) {
@@ -1067,6 +1067,29 @@
                 localStorage.removeItem('isSystemLocked');
                 document.getElementById('lock-screen-overlay').classList.add('hidden');
             }
+
+            // Sync Logins Extraneously Across Devices
+            const currentlyLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            const splashScreen = document.getElementById('splash-screen');
+            const loginScreen = document.getElementById('login-screen');
+            const appContainer = document.getElementById('app-container');
+
+            if (window.state.settings.globalLogin === false && currentlyLoggedIn) {
+                // Someone logged out globally
+                appContainer.classList.add('hidden');
+                splashScreen.classList.add('hidden');
+                loginScreen.classList.remove('hidden');
+                loginScreen.style.opacity = '1';
+                localStorage.removeItem('isLoggedIn');
+            } else if (window.state.settings.globalLogin === true && !currentlyLoggedIn) {
+                // Someone logged in globally
+                loginScreen.classList.add('hidden');
+                loginScreen.style.opacity = '0';
+                splashScreen.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                appContainer.style.display = 'flex';
+                localStorage.setItem('isLoggedIn', 'true');
+            }
             
             // Set app logos universally
             if (window.state.settings.logo) {
@@ -1082,7 +1105,6 @@
             }
 
             render.all();
-            translateUI();
             
             // Hide global loader
             document.getElementById('firebase-loader').classList.add('hidden');
@@ -2056,7 +2078,9 @@
             navigate: (e) => {
                 if (e.target.closest('.sidebar-item')) {
                     e.preventDefault();
-                    window.state.ui.currentPage = e.target.closest('.sidebar-item').dataset.page;
+                    const targetPage = e.target.closest('.sidebar-item').dataset.page;
+                    window.state.ui.currentPage = targetPage;
+                    window.location.hash = targetPage;
                     utils.saveState();
                     render.page();
                 }
@@ -2720,7 +2744,14 @@
                     render.all();
                     window.translateUI();
                     historyManager.updateButtons();
-                    if(typeof window._syncToFirebase === 'function') window._syncToFirebase(window.state);
+                    if(typeof window._syncToFirebase === 'function') {
+                        // Resync but exclude UI
+                        const stateToSync = {
+                            students: window.state.students,
+                            settings: window.state.settings
+                        };
+                        window._syncToFirebase(stateToSync);
+                    }
                 }
             },
 
@@ -2732,7 +2763,14 @@
                     render.all();
                     window.translateUI();
                     historyManager.updateButtons();
-                    if(typeof window._syncToFirebase === 'function') window._syncToFirebase(window.state);
+                    if(typeof window._syncToFirebase === 'function') {
+                        // Resync but exclude UI
+                        const stateToSync = {
+                            students: window.state.students,
+                            settings: window.state.settings
+                        };
+                        window._syncToFirebase(stateToSync);
+                    }
                 }
             }
         };
@@ -2741,6 +2779,23 @@
         // --- DOM CONTENT LOADED (Boot Sequence) ---
         document.addEventListener('DOMContentLoaded', () => {
             
+            // Set Page From URL Hash (if exists) before loading
+            const hash = window.location.hash.replace('#', '');
+            if (['dashboard', 'students', 'manage'].includes(hash)) {
+                window.state.ui.currentPage = hash;
+            } else {
+                window.location.hash = window.state.ui.currentPage;
+            }
+            
+            // Allow Back/Forward browser buttons to change the UI tab
+            window.addEventListener('hashchange', () => {
+                const newHash = window.location.hash.replace('#', '');
+                if (['dashboard', 'students', 'manage'].includes(newHash) && window.state.ui.currentPage !== newHash) {
+                    window.state.ui.currentPage = newHash;
+                    render.page();
+                }
+            });
+
             // Check if Firebase was miraculously fast and already loaded
             if (window._cloudStateStatus === 'LOADED' && window._cloudStateBuffer) {
                 window._updateStateFromCloud(window._cloudStateBuffer);
@@ -2761,34 +2816,51 @@
             const loginScreen = document.getElementById('login-screen');
             const appContainer = document.getElementById('app-container');
 
+            // SMART BYPASS: If Local Storage already says we are logged in, 
+            // Skip the Splash Animation instantly. Firebase will still boot silently.
+            const currentlyLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (currentlyLoggedIn) {
+                splashScreen.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                appContainer.style.display = 'flex';
+                progress = 100; // Finish the bar to immediately clear the boot interval
+            }
+
             const bootInterval = setInterval(() => {
                 progress += 2; 
                 if (progress > 100) progress = 100;
                 progressBar.style.width = progress + '%';
-                progressText.textContent = `Loading System... ${progress}%`;
                 
+                if (progress < 100) {
+                    progressText.textContent = `Connecting to Cloud... ${progress}%`;
+                }
+
                 // Wait until bar is 100% AND Firebase is connected/resolved
                 if (progress >= 100 && window._cloudStateStatus !== 'PENDING') {
                     clearInterval(bootInterval);
                     progressText.textContent = 'Ready!';
                     
-                    setTimeout(() => {
-                        splashScreen.style.opacity = '0';
-                        
-                        // Cloud-backed Global Login Priority (Overrides local cache)
-                        const isAuthorized = window._cloudStateStatus === 'LOADED' 
-                            ? window.state.settings.globalLogin 
-                            : (localStorage.getItem('isLoggedIn') === 'true');
+                    // We only need to animate if the splash screen hasn't been bypassed
+                    if (!splashScreen.classList.contains('hidden')) {
+                        setTimeout(() => {
+                            splashScreen.style.opacity = '0';
+                            
+                            // Cloud-backed Global Login Priority (Overrides local cache)
+                            const isAuthorized = window._cloudStateStatus === 'LOADED' 
+                                ? window.state.settings.globalLogin 
+                                : currentlyLoggedIn;
 
-                        if (isAuthorized) {
-                            appContainer.classList.remove('hidden');
-                            appContainer.style.display = 'flex';
-                        } else {
-                            loginScreen.classList.remove('hidden');
-                            setTimeout(() => loginScreen.style.opacity = '1', 50);
-                        }
-                        setTimeout(() => splashScreen.classList.add('hidden'), 600);
-                    }, 500);
+                            if (isAuthorized) {
+                                appContainer.classList.remove('hidden');
+                                appContainer.style.display = 'flex';
+                                localStorage.setItem('isLoggedIn', 'true');
+                            } else {
+                                loginScreen.classList.remove('hidden');
+                                setTimeout(() => loginScreen.style.opacity = '1', 50);
+                            }
+                            setTimeout(() => splashScreen.classList.add('hidden'), 600);
+                        }, 500);
+                    }
                 }
             }, 30);
 
