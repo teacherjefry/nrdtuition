@@ -1532,6 +1532,81 @@
                 `;
 
                 utils.printContent('print_receipt', receiptHTML, true);
+            },
+            generateRosterReportHTML: () => {
+                let filteredStudents = window.data.getFilteredStudents(true);
+                const filters = window.state.ui.rosterFilters;
+                
+                const getFilterValue = (key) => {
+                    const value = filters[key];
+                    if (value === 'all') return window.translations[window.state.ui.language].all;
+                    if (key === 'statusMonth') return window.translations[window.state.ui.language][value.toLowerCase()] || value;
+                    return value;
+                };
+
+                const filterSummary = `
+                    <div class="content-box">
+                        <h3 style="margin-top:0;">${window.translations[window.state.ui.language].roster_filtered_by}:</h3>
+                        <p class="info-line">
+                            <b>${window.translations[window.state.ui.language].school_year}:</b> ${getFilterValue('schoolYear')} &nbsp;|&nbsp; 
+                            <b>${window.translations[window.state.ui.language].campus}:</b> ${getFilterValue('campus')} &nbsp;|&nbsp; 
+                            <b>${window.translations[window.state.ui.language].department}:</b> ${getFilterValue('department')} &nbsp;|&nbsp; 
+                            <b>${window.translations[window.state.ui.language].class_section}:</b> ${getFilterValue('className')}
+                        </p>
+                        <p class="info-line">
+                            <b>${window.translations[window.state.ui.language].month_status_filter}:</b> ${getFilterValue('statusMonth')} &nbsp;|&nbsp; 
+                            <b>${window.translations[window.state.ui.language].payment_status_filter}:</b> ${getFilterValue('paymentStatus')} 
+                        </p>
+                        <p class="info-line" style="margin-top: 10px; font-size: 16px;"><b>Total Students:</b> ${filteredStudents.length}</p>
+                    </div>
+                `;
+
+                const tableRows = filteredStudents.map(student => {
+                    const selectedMonth = filters.statusMonth;
+                    const paymentEntry = student.payments[selectedMonth];
+                    let statusText = window.translations[window.state.ui.language].unpaid;
+                    let statusClass = 'status-unpaid';
+
+                    if (selectedMonth === 'Jul' && !paymentEntry) {
+                        statusText = window.translations[window.state.ui.language].na;
+                        statusClass = 'status-not-enrolled';
+                    } else if (paymentEntry && paymentEntry.status === 'paid') {
+                        statusText = window.translations[window.state.ui.language].paid;
+                        statusClass = 'status-paid';
+                    } else {
+                        statusText = window.translations[window.state.ui.language].unpaid;
+                        statusClass = 'status-unpaid';
+                    }
+
+                    return `
+                        <tr>
+                            <td><b>${student.name}</b></td>
+                            <td>${student.schoolYear}</td>
+                            <td>${student.department}</td>
+                            <td>${student.className}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const tableHTML = `
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                        <thead>
+                            <tr>
+                                <th>${window.translations[window.state.ui.language].student_name}</th>
+                                <th>${window.translations[window.state.ui.language].school_year}</th>
+                                <th>${window.translations[window.state.ui.language].department}</th>
+                                <th>${window.translations[window.state.ui.language].class_section}</th>
+                                <th>${window.translations[window.state.ui.language].payment_status} (${window.translations[window.state.ui.language][filters.statusMonth.toLowerCase()] || filters.statusMonth})</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                `;
+
+                return filterSummary + tableHTML;
             }
         };
         window.utils = utils;
@@ -2655,7 +2730,7 @@
                     const studentId = document.getElementById('payment-modal').dataset.studentId;
                     utils.printReceipt(studentId);
                 } else if (window.state.ui.currentPage === 'students') {
-                    const content = generateRosterReportHTML();
+                    const content = utils.generateRosterReportHTML();
                     utils.printContent('print_report_roster', content);
                 } else {
                     utils.showMessage('Printing is currently only supported for the Roster and Student Details pages.');
