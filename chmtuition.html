@@ -897,57 +897,72 @@
         let isFirebaseReady = false;
         let unsubscribeSnapshot = null;
 
-        if (firebaseConfig && Object.keys(firebaseConfig).length > 0) {
+        const initFirebase = async () => {
             try {
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
-                isFirebaseReady = true;
 
-                // Mandatory Rule 3: Auth First
+                // Await Auth FIRST (Mandatory Rule 3)
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    signInWithCustomToken(auth, __initial_auth_token).catch(console.error);
+                    await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    signInAnonymously(auth).catch(console.error);
+                    await signInAnonymously(auth);
                 }
 
+                // Then setup auth listener
                 onAuthStateChanged(auth, (user) => {
                     fbUser = user;
-                    if (user) setupFirebaseListener();
+                    if (user) {
+                        isFirebaseReady = true;
+                        setupFirebaseListener();
+                    } else {
+                        isFirebaseReady = false;
+                        if (unsubscribeSnapshot) unsubscribeSnapshot();
+                    }
                 });
-            } catch(e) {
-                console.error("Firebase init failed:", e);
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                const loader = document.getElementById('firebase-loader');
+                if (loader) loader.classList.add('hidden');
             }
-        }
+        };
+
+        initFirebase();
 
         function setupFirebaseListener() {
-            if (!db) return;
-            // Public path to ensure all devices (anonymous sessions) share the same instance state
+            if (!db || !fbUser) return;
+            
+            // Shared path so multiple devices look at the same data bucket
             const docRef = doc(db, 'artifacts', fbAppId, 'public', 'data', 'appState', 'main');
             
-            unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    if (window._allowFirebaseUpdates && typeof window._updateStateFromCloud === 'function') {
-                        window._updateStateFromCloud(docSnap.data());
+            unsubscribeSnapshot = onSnapshot(docRef, 
+                (docSnap) => {
+                    if (docSnap.exists()) {
+                        if (window._allowFirebaseUpdates && typeof window._updateStateFromCloud === 'function') {
+                            window._updateStateFromCloud(docSnap.data());
+                        }
+                    } else {
+                        if (window._allowFirebaseUpdates && typeof window._initializeDefaultState === 'function') {
+                            window._initializeDefaultState();
+                        }
                     }
-                } else {
-                    // Init default state in Firebase if it doesn't exist
-                    if (window._allowFirebaseUpdates && typeof window._initializeDefaultState === 'function') {
-                        window._initializeDefaultState();
-                    }
+                }, 
+                (error) => {
+                    console.error("Firestore Listener Error:", error);
+                    const loader = document.getElementById('firebase-loader');
+                    if (loader) loader.classList.add('hidden');
                 }
-            }, (error) => {
-                console.error("Firestore Error:", error);
-            });
+            );
         }
 
         window._syncToFirebase = async function(stateData) {
-            if (!isFirebaseReady) return;
+            if (!isFirebaseReady || !fbUser || !db) return; // Strict user guard
             try {
                 const docRef = doc(db, 'artifacts', fbAppId, 'public', 'data', 'appState', 'main');
                 await setDoc(docRef, stateData);
             } catch(e) {
-                console.error("Failed to sync to Firebase:", e);
+                console.error("Firestore Write Error:", e);
             }
         };
     </script>
