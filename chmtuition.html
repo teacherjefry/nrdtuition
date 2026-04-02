@@ -890,12 +890,24 @@
             appId: "1:392714893047:web:363ea8e258e55e7c50c5f2"
         };
 
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig;
+        let parsedConfig = userFirebaseConfig;
+        if (typeof __firebase_config !== 'undefined') {
+            try {
+                parsedConfig = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
+            } catch(e) {
+                console.error("Config parse error:", e);
+            }
+        }
+        const firebaseConfig = parsedConfig;
         const fbAppId = typeof __app_id !== 'undefined' ? __app_id : 'neerada-tracker-db';
         
         let db, auth, fbUser;
         let isFirebaseReady = false;
         let unsubscribeSnapshot = null;
+
+        // Buffers for when Firebase loads faster than the UI script
+        window._cloudStateBuffer = null;
+        window._cloudStateStatus = 'PENDING';
 
         const initFirebase = async () => {
             try {
@@ -918,11 +930,15 @@
                         setupFirebaseListener();
                     } else {
                         isFirebaseReady = false;
-                        if (unsubscribeSnapshot) unsubscribeSnapshot();
+                        if (unsubscribeSnapshot) {
+                            unsubscribeSnapshot();
+                            unsubscribeSnapshot = null;
+                        }
                     }
                 });
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
+                window._cloudStateStatus = 'ERROR';
                 const loader = document.getElementById('firebase-loader');
                 if (loader) loader.classList.add('hidden');
             }
@@ -933,16 +949,26 @@
         function setupFirebaseListener() {
             if (!db || !fbUser) return;
             
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+            }
+            
             // Shared path so multiple devices look at the same data bucket
             const docRef = doc(db, 'artifacts', fbAppId, 'public', 'data', 'appState', 'main');
             
             unsubscribeSnapshot = onSnapshot(docRef, 
                 (docSnap) => {
                     if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        window._cloudStateBuffer = data;
+                        window._cloudStateStatus = 'LOADED';
+                        
                         if (window._allowFirebaseUpdates && typeof window._updateStateFromCloud === 'function') {
-                            window._updateStateFromCloud(docSnap.data());
+                            window._updateStateFromCloud(data);
                         }
                     } else {
+                        window._cloudStateStatus = 'EMPTY';
+                        
                         if (window._allowFirebaseUpdates && typeof window._initializeDefaultState === 'function') {
                             window._initializeDefaultState();
                         }
@@ -950,6 +976,7 @@
                 }, 
                 (error) => {
                     console.error("Firestore Listener Error:", error);
+                    window._cloudStateStatus = 'ERROR';
                     const loader = document.getElementById('firebase-loader');
                     if (loader) loader.classList.add('hidden');
                 }
@@ -1084,10 +1111,6 @@
 
         // --- MAIN APP SCRIPT ---
         function initMainApp() {
-            // Check global lock state mapping locally
-            window.state = state; 
-            window.utils = utils;
-
             // --- TRANSLATIONS ---
             const translations = {
                 en: {
@@ -1366,6 +1389,7 @@
 
             // --- APPLICATION STATE ---
             let state = {};
+            window.state = state;
 
             // Hook for Cloud Sync (Overwritten by Firebase Module)
             window._updateStateFromCloud = function(cloudState) {
@@ -1465,6 +1489,9 @@
 
                 if (typeof window._syncToFirebase === 'function') window._syncToFirebase(defaultState);
                 window._updateStateFromCloud(defaultState);
+                
+                // Hide loader
+                document.getElementById('firebase-loader').classList.add('hidden');
             };
 
             // --- DOM ELEMENTS ---
@@ -1477,15 +1504,26 @@
 
             // --- UTILITY FUNCTIONS ---
             const utils = {
+                loadState: () => {
+                    // Do nothing here: let Firebase trigger _updateStateFromCloud or _initializeDefaultState
+                    // This prevents aggressively wiping the cloud database during slow connections
+                },
                 saveState: () => {
                     historyManager.saveSnapshot();
-                    if (typeof window._syncToFirebase === 'function' && window._allowFirebaseUpdates) {
-                        const stateToSync = JSON.parse(JSON.stringify(state)); 
-                        stateToSync.ui.selectedStudents = Array.from(state.ui.selectedStudents);
-                        window._allowFirebaseUpdates = false;
-                        window._syncToFirebase(stateToSync).then(() => {
-                             setTimeout(() => window._allowFirebaseUpdates = true, 500);
-                        });
+                    if (typeof window._syncToFirebase === 'function') {
+                        // Debounce the save to prevent slowing down syncing with too many requests
+                        if (window._saveTimeout) clearTimeout(window._saveTimeout);
+                        
+                        window._saveTimeout = setTimeout(() => {
+                            if (window._allowFirebaseUpdates) {
+                                const stateToSync = JSON.parse(JSON.stringify(state)); 
+                                stateToSync.ui.selectedStudents = Array.from(state.ui.selectedStudents);
+                                window._allowFirebaseUpdates = false;
+                                window._syncToFirebase(stateToSync).then(() => {
+                                     setTimeout(() => window._allowFirebaseUpdates = true, 500);
+                                });
+                            }
+                        }, 800);
                     }
                 },
                 updateFavicons: (url) => {
@@ -2090,7 +2128,7 @@
 
                     const months = utils.getMonths();
                     statusMonthFilter.innerHTML = months.map(m => `<option value="${m}">${translations[state.ui.language][m.toLowerCase()] || m}</option>`).join('') +
-                                                                    `<option value="${utils.getSummerMonth()}">${translations[state.ui.language].july_summer}</option>`;
+                                                                        `<option value="${utils.getSummerMonth()}">${translations[state.ui.language].july_summer}</option>`;
                     
                     syFilter.value = state.ui.rosterFilters.schoolYear;
                     campusFilter.value = state.ui.rosterFilters.campus;
@@ -3103,15 +3141,6 @@
                 utils.loadState();
                 DOMElements.currentYearSpan.textContent = new Date().getFullYear();
 
-                // Forcefully hide the sync overlay after 1 second so the UI is never blocked
-                // Data will continue to quietly sync in the background
-                setTimeout(() => {
-                    const loader = document.getElementById('firebase-loader');
-                    if (loader && !loader.classList.contains('hidden')) {
-                        loader.classList.add('hidden');
-                    }
-                }, 1000);
-
                 document.querySelector('aside').addEventListener('click', handlers.navigate);
                 document.getElementById('settings-btn').addEventListener('click', handlers.openSettingsModal);
                 document.getElementById('close-settings-modal').addEventListener('click', () => utils.hideModal('settings-modal'));
@@ -3159,6 +3188,24 @@
                 document.getElementById('manage-page').addEventListener('click', handlers.handleManageClicks);
                 document.getElementById('settings-modal').addEventListener('click', handlers.handleManageClicks);
                 
+                // System Lock Trigger (Now on Login Screen)
+                const loginSecretLock = document.getElementById('login-secret-lock');
+                if(loginSecretLock) {
+                    loginSecretLock.addEventListener('click', () => {
+                        const code = prompt("Enter Admin Code to Lock System:");
+                        if (code === "0000") {
+                            localStorage.setItem('isSystemLocked', 'true');
+                            document.getElementById('lock-screen-overlay').classList.remove('hidden');
+                            if(typeof window.state !== 'undefined' && window.state.ui) {
+                                window.state.ui.isSystemLocked = true;
+                                if (typeof window.utils !== 'undefined') window.utils.saveState();
+                            }
+                        } else if (code !== null) {
+                            alert("Incorrect Code. Access Denied.");
+                        }
+                    });
+                }
+
                 document.querySelector('.settings-tab').parentElement.addEventListener('click', handlers.handleSettingsTabs);
                 document.getElementById('theme-select').addEventListener('change', handlers.handleSettingsChanges);
                 document.getElementById('font-select').addEventListener('change', handlers.handleSettingsChanges);
@@ -3221,13 +3268,24 @@
                     }
                 });
 
-                render.all();
-                translateUI();
+                // Catch up if Firebase loaded before the UI script was fully ready
+                if (window._cloudStateStatus === 'LOADED' && window._cloudStateBuffer) {
+                    window._updateStateFromCloud(window._cloudStateBuffer);
+                } else if (window._cloudStateStatus === 'EMPTY') {
+                    window._initializeDefaultState();
+                } else {
+                    render.all();
+                    translateUI();
+                    if (window._cloudStateStatus === 'ERROR') {
+                        document.getElementById('firebase-loader').classList.add('hidden');
+                    }
+                }
                 
                 isInitializing = false;
                 historyManager.saveSnapshot();
             }
 
+            window.utils = utils;
             init();
         }
     </script>
